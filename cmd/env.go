@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/qing/openvault/internal/config"
-	"github.com/qing/openvault/internal/keychain"
-	"github.com/qing/openvault/internal/vault"
+	"github.com/npc-live/openvault/internal/config"
+	"github.com/npc-live/openvault/internal/keychain"
+	"github.com/npc-live/openvault/internal/vault"
 )
 
 var envCmd = &cobra.Command{

@@ -1,4 +1,4 @@
-module github.com/qing/openvault
+module github.com/npc-live/openvault
 
 go 1.22
 

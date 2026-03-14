@@ -14,7 +14,7 @@ node -e "console.log(process.env.OPENAI_API_KEY)"  # 自动注入，直接用
 ### 方式一：从源码编译（需要 Go 1.22+）
 
 ```bash
-git clone https://github.com/qing/openvault
+git clone https://github.com/npc-live/openvault
 cd openvault
 make build
 
@@ -25,7 +25,7 @@ sudo mv openvault /usr/local/bin/
 ### 方式二：直接 go install
 
 ```bash
-go install github.com/qing/openvault@latest
+go install github.com/npc-live/openvault@latest
 ```
 
 ---

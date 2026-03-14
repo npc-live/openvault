@@ -1,6 +1,6 @@
 package main
 
-import "github.com/qing/openvault/cmd"
+import "github.com/npc-live/openvault/cmd"
 
 func main() {
 	cmd.Execute()

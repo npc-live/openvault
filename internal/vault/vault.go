@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/qing/openvault/internal/config"
-	"github.com/qing/openvault/internal/crypto"
-	"github.com/qing/openvault/internal/keychain"
-	"github.com/qing/openvault/internal/store"
+	"github.com/npc-live/openvault/internal/config"
+	"github.com/npc-live/openvault/internal/crypto"
+	"github.com/npc-live/openvault/internal/keychain"
+	"github.com/npc-live/openvault/internal/store"
 )
 
 // Vault is the high-level orchestrator that ties together the store,
