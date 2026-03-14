@@ -1,46 +1,60 @@
 # OpenVault
 
-加密本地密钥管理工具。替代 `.env` / `~/.zshrc` 硬编码，密钥自动注入 shell，无需每次手动 `export`。
+Encrypted local secret manager. A replacement for `.env` files and hardcoded credentials in `~/.zshrc` — secrets are automatically injected into your shell before every command, no manual `export` needed.
 
 ```
-openvault set OPENAI_API_KEY    # 隐藏输入，加密存储
-node -e "console.log(process.env.OPENAI_API_KEY)"  # 自动注入，直接用
+openvault set OPENAI_API_KEY    # hidden input, encrypted at rest
+node -e "console.log(process.env.OPENAI_API_KEY)"  # just works
 ```
 
 ---
 
-## 安装
+## Install & Setup
 
-### 方式一：从源码编译（需要 Go 1.22+）
+Complete setup takes about one minute.
+
+### Step 1 — Install the binary
+
+**Download a pre-built binary** (no Go required):
+
+Go to [Releases](https://github.com/npc-live/openvault/releases), download the binary for your platform, and move it to your PATH:
 
 ```bash
-git clone https://github.com/npc-live/openvault
-cd openvault
-make build
+# macOS Apple Silicon
+curl -L https://github.com/npc-live/openvault/releases/latest/download/openvault-darwin-arm64 -o openvault
+chmod +x openvault
+sudo mv openvault /usr/local/bin/
 
-# 移动到 PATH
+# macOS Intel
+curl -L https://github.com/npc-live/openvault/releases/latest/download/openvault-darwin-amd64 -o openvault
+chmod +x openvault
+sudo mv openvault /usr/local/bin/
+
+# Linux x86_64
+curl -L https://github.com/npc-live/openvault/releases/latest/download/openvault-linux-amd64 -o openvault
+chmod +x openvault
 sudo mv openvault /usr/local/bin/
 ```
 
-### 方式二：直接 go install
+**Or install with Go:**
 
 ```bash
 go install github.com/npc-live/openvault@latest
+
+# Make sure $GOPATH/bin is in your PATH
+echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
----
-
-## 快速开始
-
-### 1. 初始化
+### Step 2 — Initialize the vault
 
 ```bash
 openvault init
 ```
 
-在 `~/.config/openvault/vault.db` 创建加密数据库，主密钥自动保存到 macOS Keychain，无需记忆任何密码。
+Creates an encrypted database at `~/.config/openvault/vault.db`. The master key is stored in your macOS Keychain — no password to remember.
 
-### 2. 配置自动注入（只需一次）
+### Step 3 — Enable automatic injection
 
 ```bash
 # zsh
@@ -52,40 +66,32 @@ echo 'eval "$(openvault shell-init --shell bash)"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-配置后，你的每条命令执行前，OpenVault 自动把所有密钥注入当前 shell 环境。
+This installs a shell hook that injects all your secrets into the environment before every command you run.
 
-### 3. 存入密钥
+### Step 4 — Store your first secret
 
 ```bash
 openvault set OPENAI_API_KEY
-# Enter value for OPENAI_API_KEY: （输入不可见）
+# Enter value for OPENAI_API_KEY: (input hidden)
 # Secret "OPENAI_API_KEY" stored.
 ```
 
-### 4. 直接使用，无需任何前缀
+### Step 5 — Use it, no prefix needed
 
 ```bash
-# 直接运行，密钥已在环境变量中
-npm run dev
-docker push myimage
-python train.py
+node -e "console.log(process.env.OPENAI_API_KEY)"  # ✓
+npm run dev                                          # ✓
+docker push myimage                                  # ✓
+python train.py                                      # ✓
 ```
 
 ---
 
-## 命令参考
-
-### `openvault init`
-
-初始化 vault。只需运行一次。
-
-```bash
-openvault init
-```
+## Command Reference
 
 ### `openvault set <KEY>`
 
-存储一个密钥，终端隐藏输入，不写入 shell history。
+Store a secret. Input is hidden at the terminal and never written to shell history.
 
 ```bash
 openvault set OPENAI_API_KEY
@@ -95,7 +101,7 @@ openvault set DATABASE_URL
 
 ### `openvault get <KEY>`
 
-读取并打印密钥值。
+Print a secret's value.
 
 ```bash
 openvault get OPENAI_API_KEY
@@ -103,7 +109,7 @@ openvault get OPENAI_API_KEY
 
 ### `openvault list`
 
-列出所有已存储的密钥名（不显示值）。
+List all stored secret names (values are never shown).
 
 ```bash
 openvault list
@@ -114,23 +120,15 @@ openvault list
 
 ### `openvault delete <KEY>`
 
-删除一个密钥。
+Delete a secret.
 
 ```bash
 openvault delete DATABASE_URL
 ```
 
-### `openvault env`
-
-以 `export KEY=value` 格式输出所有密钥，用于 `eval` 注入。
-
-```bash
-eval "$(openvault env)"
-```
-
 ### `openvault run <command>`
 
-不依赖 shell hook，直接在命令前加 `openvault run` 注入密钥。适合 CI/CD、Docker 等非交互场景。
+Inject secrets for a single command without relying on the shell hook. Useful for CI/CD, Docker, and non-interactive environments.
 
 ```bash
 openvault run npm run dev
@@ -138,64 +136,60 @@ openvault run docker push myimage
 openvault run -- python -c "import os; print(os.environ['OPENAI_API_KEY'])"
 ```
 
-### `openvault shell-init --shell <zsh|bash>`
+### `openvault env`
 
-输出 shell hook 代码，用于写入配置文件。
+Print all secrets as `export KEY=value` statements, suitable for `eval`.
 
 ```bash
-openvault shell-init --shell zsh   # 输出 zsh preexec hook
-openvault shell-init --shell bash  # 输出 bash PROMPT_COMMAND hook
+eval "$(openvault env)"
 ```
 
 ---
 
-## 安全说明
+## Security
 
-| 安全项 | 实现 |
+| Property | Implementation |
 |---|---|
-| 加密存储 | AES-256-GCM，每个密钥独立随机 nonce |
-| 主密钥 | 32 字节随机密钥，托管于 macOS Keychain，永不落盘 |
-| 隐藏输入 | 内核级禁 echo，不写入 shell history |
-| 文件权限 | DB 文件 `0600`，目录 `0700` |
-| 内存清理 | 关闭时清零内存中的密钥 |
+| Encryption | AES-256-GCM with a unique random nonce per secret |
+| Master key | 32-byte random key stored in macOS Keychain, never written to disk |
+| Hidden input | Kernel-level echo suppression via `term.ReadPassword`, not saved to history |
+| File permissions | DB file `0600`, directory `0700` |
+| Memory safety | Key zeroed in memory on `Close()` |
 
-**验证加密**（DB 中无明文）：
+**Verify nothing is stored in plaintext:**
 
 ```bash
 strings ~/.config/openvault/vault.db | grep YOUR_SECRET
-# 无输出
-```
-
-**验证 Keychain 条目**：
-
-```bash
-security find-generic-password -s openvault
+# no output
 ```
 
 ---
 
-## CI/CD 使用
+## CI/CD
 
-在 CI 环境中没有 Keychain，使用 `openvault run` 配合环境变量直接传入密钥，或使用平台自带的 secrets 管理（GitHub Actions Secrets 等）。OpenVault 主要面向本地开发场景。
+OpenVault is designed for local development. In CI environments without a Keychain, use `openvault run` with secrets passed via the platform's native secret management (e.g. GitHub Actions Secrets, Doppler).
 
 ---
 
-## 数据存储位置
+## Storage Locations
 
-| 平台 | 路径 |
+| Platform | Path |
 |---|---|
 | macOS | `~/.config/openvault/vault.db` |
-| Linux | `~/.config/openvault/vault.db`（主密钥存 `~/.config/openvault/.openvault.key`） |
-| 自定义 | 设置 `XDG_CONFIG_HOME` 环境变量 |
+| Linux | `~/.config/openvault/vault.db` (master key at `~/.config/openvault/.openvault.key`) |
+| Custom | Set the `XDG_CONFIG_HOME` environment variable |
 
 ---
 
-## 构建
+## Build from Source
+
+Requires Go 1.22+.
 
 ```bash
-make build    # 编译到当前目录
-make install  # 安装到 $GOPATH/bin
-make clean    # 删除编译产物
+git clone https://github.com/npc-live/openvault
+cd openvault
+make build
+sudo mv openvault /usr/local/bin/
 ```
 
-依赖：`github.com/spf13/cobra`、`go.etcd.io/bbolt`、`golang.org/x/term`，无 CGo，`CGO_ENABLED=0` 可静态编译。
+Dependencies: `github.com/spf13/cobra`, `go.etcd.io/bbolt`, `golang.org/x/term`. No CGo — fully static binary.

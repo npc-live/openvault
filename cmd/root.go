@@ -15,6 +15,11 @@ injecting them into your shell automatically — no more .env files or
 hardcoded credentials.`,
 }
 
+// SetVersion sets the version string shown by --version.
+func SetVersion(v string) {
+	rootCmd.Version = v
+}
+
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
