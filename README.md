@@ -1,6 +1,6 @@
 # OpenVault
 
-Encrypted local secret manager. A replacement for `.env` files and hardcoded credentials in `~/.zshrc` — secrets are automatically injected into your shell before every command, no manual `export` needed.
+Encrypted secret manager with optional E2EE cloud sync. A replacement for `.env` files and hardcoded credentials in `~/.zshrc` — secrets are automatically injected into your shell before every command, no manual `export` needed.
 
 ```
 openvault set OPENAI_API_KEY    # hidden input, encrypted at rest
@@ -40,10 +40,6 @@ sudo mv openvault /usr/local/bin/
 
 ```bash
 go install github.com/npc-live/openvault@latest
-
-# Make sure $GOPATH/bin is in your PATH
-echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.zshrc
-source ~/.zshrc
 ```
 
 ### Step 2 — Initialize the vault
@@ -87,74 +83,113 @@ python train.py                                      # ✓
 
 ---
 
+## Cloud Sync (optional)
+
+Sync secrets across devices with end-to-end encryption. The server stores only ciphertext — it cannot decrypt anything.
+
+### How it works
+
+```
+vault_key = PBKDF2-SHA256(password, secret_key, 100k iter)
+```
+
+Your `secret_key` is a random 32-byte file saved to `~/.config/openvault/secret-key.txt`. It never leaves your machine. Without it (and your password), the ciphertext on the server is useless.
+
+### Register
+
+```bash
+openvault register
+# Email: you@example.com
+# Password: (hidden)
+# Confirm password: (hidden)
+# → verification code sent to your email
+# Verification code: 123456
+# Registered successfully!
+# Secret key saved to: ~/.config/openvault/secret-key.txt
+```
+
+**Back up `~/.config/openvault/secret-key.txt` somewhere safe.** You need it to log in on a new device.
+
+### Sync
+
+```bash
+openvault sync
+# ↓ 0 pulled, ↑ 3 pushed
+```
+
+Pull + merge + push in one step. Last-write-wins by timestamp.
+
+### Login on a new device
+
+```bash
+openvault init
+openvault login --secret-key ~/.config/openvault/secret-key.txt
+# Email: you@example.com
+# Password: (hidden)
+
+openvault sync
+# ↓ 3 pulled, ↑ 3 pushed
+```
+
+### Other commands
+
+```bash
+openvault logout          # revokes token on server + clears local keychain
+openvault forgot-password # reset password via email code
+```
+
+---
+
 ## Command Reference
 
-### `openvault set <KEY>`
+### Local
 
-Store a secret. Input is hidden at the terminal and never written to shell history.
+| Command | Description |
+|---|---|
+| `openvault init` | Create a new vault |
+| `openvault set <KEY>` | Store a secret (hidden input) |
+| `openvault get <KEY>` | Print a secret's value |
+| `openvault list` | List all secret names |
+| `openvault delete <KEY>` | Delete a secret (also removes from server if logged in) |
+| `openvault run <cmd>` | Run a command with secrets injected |
+| `openvault env` | Print all secrets as `export KEY=value` |
+| `openvault shell-init` | Print shell hook code |
 
-```bash
-openvault set OPENAI_API_KEY
-openvault set AWS_SECRET_ACCESS_KEY
-openvault set DATABASE_URL
-```
+### Cloud sync
 
-### `openvault get <KEY>`
-
-Print a secret's value.
-
-```bash
-openvault get OPENAI_API_KEY
-```
-
-### `openvault list`
-
-List all stored secret names (values are never shown).
-
-```bash
-openvault list
-# OPENAI_API_KEY
-# AWS_SECRET_ACCESS_KEY
-# DATABASE_URL
-```
-
-### `openvault delete <KEY>`
-
-Delete a secret.
-
-```bash
-openvault delete DATABASE_URL
-```
-
-### `openvault run <command>`
-
-Inject secrets for a single command without relying on the shell hook. Useful for CI/CD, Docker, and non-interactive environments.
-
-```bash
-openvault run npm run dev
-openvault run docker push myimage
-openvault run -- python -c "import os; print(os.environ['OPENAI_API_KEY'])"
-```
-
-### `openvault env`
-
-Print all secrets as `export KEY=value` statements, suitable for `eval`.
-
-```bash
-eval "$(openvault env)"
-```
+| Command | Description |
+|---|---|
+| `openvault register` | Create account, re-encrypt vault, push secrets |
+| `openvault login` | Authenticate on this device (`--secret-key <file>` for new devices) |
+| `openvault logout` | Revoke JWT on server and clear local credentials |
+| `openvault sync` | Pull + merge + push (last-write-wins) |
+| `openvault forgot-password` | Reset password via email OTP |
 
 ---
 
 ## Security
 
+### Local
+
 | Property | Implementation |
 |---|---|
-| Encryption | AES-256-GCM with a unique random nonce per secret |
-| Master key | 32-byte random key stored in macOS Keychain, never written to disk |
-| Hidden input | Kernel-level echo suppression via `term.ReadPassword`, not saved to history |
-| File permissions | DB file `0600`, directory `0700` |
-| Memory safety | Key zeroed in memory on `Close()` |
+| Encryption | AES-256-GCM, unique random nonce per secret |
+| Master key | 32-byte random key in macOS Keychain, never written to disk |
+| Hidden input | Kernel-level echo suppression via `term.ReadPassword` |
+| File permissions | DB `0600`, directory `0700` |
+| Memory | Key zeroed on `Close()`, password bytes zeroed after use |
+
+### Cloud sync
+
+| Property | Implementation |
+|---|---|
+| Key derivation | PBKDF2-SHA256, 100,000 iterations |
+| Server storage | Ciphertext only — server cannot decrypt secrets |
+| Secret key | Never sent to server; required to derive vault key on a new device |
+| Password hashing | PBKDF2-SHA256 server-side (separate salt) |
+| Auth tokens | HS256 JWT with `jti`; revoked server-side on logout |
+| OTP security | SHA-256 hashed at rest; max 5 attempts before invalidation |
+| Transport | TLS (Cloudflare Workers) |
 
 **Verify nothing is stored in plaintext:**
 
@@ -165,19 +200,22 @@ strings ~/.config/openvault/vault.db | grep YOUR_SECRET
 
 ---
 
-## CI/CD
+## Storage Locations
 
-OpenVault is designed for local development. In CI environments without a Keychain, use `openvault run` with secrets passed via the platform's native secret management (e.g. GitHub Actions Secrets, Doppler).
+| File | Path |
+|---|---|
+| Vault database | `~/.config/openvault/vault.db` |
+| Secret key (cloud) | `~/.config/openvault/secret-key.txt` |
+| Master key (macOS) | macOS Keychain, service `openvault` |
+| Master key (Linux) | `~/.config/openvault/.openvault.key` |
+
+Set `XDG_CONFIG_HOME` to override the config directory.
 
 ---
 
-## Storage Locations
+## CI/CD
 
-| Platform | Path |
-|---|---|
-| macOS | `~/.config/openvault/vault.db` |
-| Linux | `~/.config/openvault/vault.db` (master key at `~/.config/openvault/.openvault.key`) |
-| Custom | Set the `XDG_CONFIG_HOME` environment variable |
+OpenVault is designed for local development. In CI environments without a Keychain, use `openvault run` with secrets passed via the platform's native secret management (e.g. GitHub Actions Secrets).
 
 ---
 
@@ -188,8 +226,8 @@ Requires Go 1.22+.
 ```bash
 git clone https://github.com/npc-live/openvault
 cd openvault
-make build
+CGO_ENABLED=0 go build -o openvault .
 sudo mv openvault /usr/local/bin/
 ```
 
-Dependencies: `github.com/spf13/cobra`, `go.etcd.io/bbolt`, `golang.org/x/term`. No CGo — fully static binary.
+Dependencies: `cobra`, `bbolt`, `golang.org/x/term`, `golang.org/x/crypto`. No CGo — fully static binary.
