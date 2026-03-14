@@ -1,12 +1,17 @@
 package store
 
 import (
+	"encoding/binary"
 	"fmt"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
 
-var bucketName = []byte("secrets")
+var (
+	bucketName = []byte("secrets")
+	metaBucket = []byte("meta")
+)
 
 // BoltStore implements Store using bbolt.
 type BoltStore struct {
@@ -19,9 +24,12 @@ func Open(path string) (*BoltStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	// Ensure bucket exists.
+	// Ensure buckets exist.
 	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(bucketName)
+		if _, err := tx.CreateBucketIfNotExists(bucketName); err != nil {
+			return err
+		}
+		_, err = tx.CreateBucketIfNotExists(metaBucket)
 		return err
 	})
 	if err != nil {
@@ -47,10 +55,50 @@ func (s *BoltStore) Get(key string) ([]byte, error) {
 }
 
 func (s *BoltStore) Set(key string, value []byte) error {
+	return s.SetRaw(key, value, time.Now().Unix())
+}
+
+func (s *BoltStore) SetRaw(key string, value []byte, ts int64) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(bucketName)
-		return b.Put([]byte(key), value)
+		if err := tx.Bucket(bucketName).Put([]byte(key), value); err != nil {
+			return err
+		}
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, uint64(ts))
+		return tx.Bucket(metaBucket).Put([]byte(key), buf)
 	})
+}
+
+func (s *BoltStore) GetUpdatedAt(key string) (int64, error) {
+	var ts int64
+	err := s.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(metaBucket).Get([]byte(key))
+		if v == nil {
+			return ErrNotFound
+		}
+		ts = int64(binary.BigEndian.Uint64(v))
+		return nil
+	})
+	return ts, err
+}
+
+func (s *BoltStore) ListEntries() ([]Entry, error) {
+	var entries []Entry
+	err := s.db.View(func(tx *bolt.Tx) error {
+		secrets := tx.Bucket(bucketName)
+		meta := tx.Bucket(metaBucket)
+		return secrets.ForEach(func(k, v []byte) error {
+			e := Entry{Key: string(k)}
+			e.Value = make([]byte, len(v))
+			copy(e.Value, v)
+			if tsBytes := meta.Get(k); len(tsBytes) == 8 {
+				e.UpdatedAt = int64(binary.BigEndian.Uint64(tsBytes))
+			}
+			entries = append(entries, e)
+			return nil
+		})
+	})
+	return entries, err
 }
 
 func (s *BoltStore) Delete(key string) error {
@@ -59,7 +107,10 @@ func (s *BoltStore) Delete(key string) error {
 		if b.Get([]byte(key)) == nil {
 			return ErrNotFound
 		}
-		return b.Delete([]byte(key))
+		if err := b.Delete([]byte(key)); err != nil {
+			return err
+		}
+		return tx.Bucket(metaBucket).Delete([]byte(key))
 	})
 }
 

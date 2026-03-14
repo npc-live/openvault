@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/npc-live/openvault/internal/auth"
 	"github.com/npc-live/openvault/internal/config"
 	"github.com/npc-live/openvault/internal/keychain"
+	"github.com/npc-live/openvault/internal/remote"
 	"github.com/npc-live/openvault/internal/store"
 	"github.com/npc-live/openvault/internal/vault"
 )
@@ -33,6 +35,15 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Secret %q deleted.\n", name)
+
+		// If logged in, also delete from server (best-effort).
+		if token, err := auth.GetToken(kc); err == nil && len(token) > 0 {
+			rc := remote.New(token)
+			if rerr := rc.DeleteSecret(name); rerr != nil {
+				fmt.Printf("Warning: could not delete from server: %v\n", rerr)
+			}
+		}
+
 		return nil
 	},
 }

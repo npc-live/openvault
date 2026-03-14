@@ -1,9 +1,12 @@
 package vault
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
+
+	"golang.org/x/crypto/pbkdf2"
 
 	"github.com/npc-live/openvault/internal/config"
 	"github.com/npc-live/openvault/internal/crypto"
@@ -62,6 +65,45 @@ func Open(dbPath string, kc keychain.Keychain) (*Vault, error) {
 	}
 
 	return &Vault{st: st, key: key}, nil
+}
+
+// DeriveKey derives a 32-byte AES key from password + secretKey using PBKDF2-SHA256.
+func DeriveKey(password, secretKey []byte) []byte {
+	return pbkdf2.Key(password, secretKey, 100000, 32, sha256.New)
+}
+
+// ReEncrypt decrypts all secrets with the current key and re-encrypts them with newKey.
+// The in-memory key is updated to newKey on success.
+func (v *Vault) ReEncrypt(newKey []byte) error {
+	entries, err := v.st.ListEntries()
+	if err != nil {
+		return fmt.Errorf("list entries: %w", err)
+	}
+	for _, e := range entries {
+		plain, err := crypto.Decrypt(v.key, e.Value)
+		if err != nil {
+			return fmt.Errorf("decrypt %q: %w", e.Key, err)
+		}
+		enc, err := crypto.Encrypt(newKey, plain)
+		if err != nil {
+			return fmt.Errorf("re-encrypt %q: %w", e.Key, err)
+		}
+		if err := v.st.SetRaw(e.Key, enc, e.UpdatedAt); err != nil {
+			return fmt.Errorf("store %q: %w", e.Key, err)
+		}
+	}
+	copy(v.key, newKey)
+	return nil
+}
+
+// RawSet stores pre-encrypted bytes directly (used during sync pull).
+func (v *Vault) RawSet(name string, enc []byte, ts int64) error {
+	return v.st.SetRaw(name, enc, ts)
+}
+
+// ListEntries returns all encrypted entries with timestamps (used during sync push).
+func (v *Vault) ListEntries() ([]store.Entry, error) {
+	return v.st.ListEntries()
 }
 
 // Set encrypts and stores a secret.

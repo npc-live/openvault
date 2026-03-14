@@ -2,3 +2,4 @@ openvault
 *.db
 *.test
 /dist/
+worker

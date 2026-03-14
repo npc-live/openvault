@@ -10,6 +10,7 @@ const (
 	DBFileName  = "vault.db"
 	DirPerm     = 0700
 	FilePerm    = 0600
+	APIBaseURL  = "https://openvault.mrwill84.workers.dev"
 )
 
 func DefaultDir() string {
