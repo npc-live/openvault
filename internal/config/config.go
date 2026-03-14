@@ -27,3 +27,9 @@ func DefaultDir() string {
 func DefaultDBPath() string {
 	return filepath.Join(DefaultDir(), DBFileName)
 }
+
+// SecretKeyPath returns ~/.config/openvault/secret-key.txt (0600).
+// Kept inside the config dir so it's less exposed than the home root.
+func SecretKeyPath() string {
+	return filepath.Join(DefaultDir(), "secret-key.txt")
+}

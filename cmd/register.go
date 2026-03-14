@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -35,15 +34,51 @@ var registerCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("read password: %w", err)
 		}
+		defer func() {
+			for i := range password {
+				password[i] = 0
+			}
+		}()
+
 		confirm, err := input.ReadSecret("Confirm password: ")
 		if err != nil {
 			return fmt.Errorf("read confirm: %w", err)
 		}
 		if string(password) != string(confirm) {
+			for i := range confirm {
+				confirm[i] = 0
+			}
 			return fmt.Errorf("passwords do not match")
 		}
+		for i := range confirm {
+			confirm[i] = 0
+		}
 
-		// Generate 32-byte secret key.
+		// ── Step 1: server registration + email verification ──────────────────
+		// Do ALL server calls BEFORE touching the local vault.
+		// This prevents partial state if network/server fails.
+
+		rc := remote.New("")
+		msg, err := rc.Register(email, string(password))
+		if err != nil {
+			return fmt.Errorf("register: %w", err)
+		}
+		fmt.Println(msg)
+
+		fmt.Print("Verification code: ")
+		var code string
+		if _, err := fmt.Scanln(&code); err != nil {
+			return fmt.Errorf("read code: %w", err)
+		}
+		code = strings.TrimSpace(code)
+
+		token, err := rc.VerifyEmail(email, code)
+		if err != nil {
+			return fmt.Errorf("verify email: %w", err)
+		}
+
+		// ── Step 2: re-encrypt vault now that we have a confirmed account ─────
+
 		secretKey := make([]byte, 32)
 		if _, err := rand.Read(secretKey); err != nil {
 			return fmt.Errorf("generate secret key: %w", err)
@@ -64,39 +99,17 @@ var registerCmd = &cobra.Command{
 			return fmt.Errorf("update keychain: %w", err)
 		}
 
-		// Step 1: register → server sends verification email.
-		rc := remote.New("")
-		msg, err := rc.Register(email, string(password))
-		if err != nil {
-			return fmt.Errorf("register: %w", err)
-		}
-		fmt.Println(msg)
-
-		// Step 2: prompt for verification code.
-		fmt.Print("Verification code: ")
-		var code string
-		if _, err := fmt.Scanln(&code); err != nil {
-			return fmt.Errorf("read code: %w", err)
-		}
-		code = strings.TrimSpace(code)
-
-		token, err := rc.VerifyEmail(email, code)
-		if err != nil {
-			return fmt.Errorf("verify email: %w", err)
-		}
-
 		if err := auth.SetToken(kc, token); err != nil {
 			return fmt.Errorf("store token: %w", err)
 		}
 
-		// Write secret key file.
-		home, _ := os.UserHomeDir()
-		skPath := filepath.Join(home, "openvault-secret-key.txt")
+		// ── Step 3: write secret key to config dir (not home root) ────────────
+		skPath := config.SecretKeyPath()
 		if err := os.WriteFile(skPath, []byte(hex.EncodeToString(secretKey)+"\n"), 0600); err != nil {
 			return fmt.Errorf("write secret key: %w", err)
 		}
 
-		// Push all local entries.
+		// ── Step 4: push local entries ────────────────────────────────────────
 		entries, err := v.ListEntries()
 		if err != nil {
 			return fmt.Errorf("list entries: %w", err)

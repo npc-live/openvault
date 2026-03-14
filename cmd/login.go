@@ -32,6 +32,11 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("read password: %w", err)
 		}
+		defer func() {
+			for i := range password {
+				password[i] = 0
+			}
+		}()
 
 		kc := keychain.New()
 

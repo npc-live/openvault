@@ -90,6 +90,18 @@ func (c *Client) Login(email, password string) (string, error) {
 	return ar.Token, nil
 }
 
+// Logout revokes the current JWT on the server.
+func (c *Client) Logout() error {
+	req, _ := http.NewRequest(http.MethodPost, c.base+"/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("http post: %w", err)
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 // ForgotPassword triggers a password reset email.
 func (c *Client) ForgotPassword(email string) (string, error) {
 	body, _ := json.Marshal(map[string]string{"email": email})
