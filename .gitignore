@@ -1,0 +1,4 @@
+openvault
+*.db
+*.test
+/dist/
