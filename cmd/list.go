@@ -9,6 +9,8 @@ import (
 	"github.com/npc-live/openvault/internal/vault"
 )
 
+
+
 var listCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
@@ -30,7 +32,9 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 		for _, k := range keys {
-			fmt.Println(k)
+			if !vault.IsInternalKey(k) {
+				fmt.Println(k)
+			}
 		}
 		return nil
 	},
