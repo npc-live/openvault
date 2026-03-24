@@ -140,6 +140,67 @@ openvault forgot-password # reset password via email code
 
 ---
 
+## JSON Secret References
+
+For projects that use a config file instead of environment variables, `resolve` lets you store only references in the file — no plaintext secrets on disk.
+
+**`data/api-creds.json`** — commit this file safely:
+
+```json
+{
+  "wallet_address": "0xABCD1234",
+  "secrets_backend": "openvault",
+  "poly_api_key_ref":    "myproject/poly-api-key",
+  "poly_secret_ref":     "myproject/poly-secret",
+  "poly_passphrase_ref": "myproject/poly-passphrase"
+}
+```
+
+Store the actual secrets once:
+
+```bash
+openvault set myproject/poly-api-key
+openvault set myproject/poly-secret
+openvault set myproject/poly-passphrase
+```
+
+Resolve at runtime:
+
+```bash
+# Outputs resolved JSON (secrets in plaintext, in memory only)
+openvault resolve data/api-creds.json
+
+# Outputs shell export statements
+openvault resolve data/api-creds.json --export
+eval "$(openvault resolve data/api-creds.json --export)"
+```
+
+**Node.js:**
+
+```javascript
+import { execSync } from 'child_process'
+
+const creds = JSON.parse(
+  execSync('openvault resolve data/api-creds.json').toString()
+)
+// creds.poly_api_key, creds.poly_secret, creds.poly_passphrase
+```
+
+**Python:**
+
+```python
+import json, subprocess
+
+creds = json.loads(
+    subprocess.check_output(['openvault', 'resolve', 'data/api-creds.json'])
+)
+# creds['poly_api_key'], creds['poly_secret']
+```
+
+Fields ending in `_ref` are resolved; all other fields pass through unchanged. The `_ref` suffix is stripped in the output.
+
+---
+
 ## Command Reference
 
 ### Local
@@ -153,6 +214,7 @@ openvault forgot-password # reset password via email code
 | `openvault delete <KEY>` | Delete a secret (also removes from server if logged in) |
 | `openvault run <cmd>` | Run a command with secrets injected |
 | `openvault env` | Print all secrets as `export KEY=value` |
+| `openvault resolve <file>` | Resolve `*_ref` fields in a JSON config file |
 | `openvault shell-init` | Print shell hook code |
 
 ### Cloud sync
